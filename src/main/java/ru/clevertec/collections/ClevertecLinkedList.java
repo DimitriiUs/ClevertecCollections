@@ -1,31 +1,39 @@
 package ru.clevertec.collections;
 
+import java.lang.reflect.Array;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
-public class CustomLinkedList<E> implements List<E> {
+public class ClevertecLinkedList<E> implements List<E> {
 
     /**
      * The size of the list
      */
-    private int size;
+    private AtomicInteger size = new AtomicInteger(0);
 
     /**
      * First node of the list
      */
-    private Node<E> first;
+    private volatile Node<E> first;
 
     /**
      * Last node of the list
      */
-    private Node<E> last;
+    private volatile Node<E> last;
+
+    /**
+     * The lock protecting all mutators
+     */
+    private final ReentrantLock lock = new ReentrantLock();
 
     /**
      * Constructs an empty list
      */
-    public CustomLinkedList() {
+    public ClevertecLinkedList() {
     }
 
     /**
@@ -34,7 +42,7 @@ public class CustomLinkedList<E> implements List<E> {
      * @param collection - collection with elements
      * @throws NullPointerException - if specified collection is null
      */
-    public CustomLinkedList(Collection<? extends E> collection) {
+    public ClevertecLinkedList(Collection<? extends E> collection) {
         this();
         addAll(collection);
     }
@@ -46,7 +54,7 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public int size() {
-        return size;
+        return size.get();
     }
 
     /**
@@ -56,12 +64,19 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public boolean isEmpty() {
-        return size == 0;
+        return size.get() == 0;
     }
 
     @Override
     public boolean contains(Object o) {
-        return indexOf(o) >= 0;
+        final ReentrantLock lock = this.lock;
+
+        try {
+            lock.lock();
+            return indexOf(o) >= 0;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -74,21 +89,28 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public int indexOf(Object o) {
-        int index = 0;
-        if (o == null) {
-            for (Node<E> x = first; x != null; x = x.next) {
-                if (x.element == null)
-                    return index;
-                index++;
+        final ReentrantLock lock = this.lock;
+
+        try {
+            lock.lock();
+            int index = 0;
+            if (o == null) {
+                for (Node<E> x = first; x != null; x = x.next) {
+                    if (x.element == null)
+                        return index;
+                    index++;
+                }
+            } else {
+                for (Node<E> x = first; x != null; x = x.next) {
+                    if (o.equals(x.element))
+                        return index;
+                    index++;
+                }
             }
-        } else {
-            for (Node<E> x = first; x != null; x = x.next) {
-                if (o.equals(x.element))
-                    return index;
-                index++;
-            }
+            return -1;
+        } finally {
+            lock.unlock();
         }
-        return -1;
     }
 
     /**
@@ -101,21 +123,28 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public int lastIndexOf(Object o) {
-        int index = size;
-        if (o == null) {
-            for (Node<E> x = last; x != null; x = x.previous) {
-                index--;
-                if (x.element == null)
-                    return index;
+        final ReentrantLock lock = this.lock;
+
+        try {
+            lock.lock();
+            int index = size.get();
+            if (o == null) {
+                for (Node<E> x = last; x != null; x = x.previous) {
+                    index--;
+                    if (x.element == null)
+                        return index;
+                }
+            } else {
+                for (Node<E> x = last; x != null; x = x.previous) {
+                    index--;
+                    if (o.equals(x.element))
+                        return index;
+                }
             }
-        } else {
-            for (Node<E> x = last; x != null; x = x.previous) {
-                index--;
-                if (o.equals(x.element))
-                    return index;
-            }
+            return -1;
+        } finally {
+            lock.unlock();
         }
-        return -1;
     }
 
     @Override
@@ -130,13 +159,20 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public Object[] toArray() {
-        Object[] result = new Object[size];
-        int i = 0;
+        final ReentrantLock lock = this.lock;
 
-        for (Node<E> x = first; x != null; x = x.next) {
-            result[i++] = x.element;
+        try {
+            lock.lock();
+            Object[] result = new Object[size.get()];
+            int i = 0;
+
+            for (Node<E> x = first; x != null; x = x.next) {
+                result[i++] = x.element;
+            }
+            return result;
+        } finally {
+            lock.unlock();
         }
-        return result;
     }
 
     /**
@@ -148,16 +184,23 @@ public class CustomLinkedList<E> implements List<E> {
     @Override
     @SuppressWarnings("unchecked")
     public <T> T[] toArray(T[] a) {
-        a = (T[]) java.lang.reflect.Array.newInstance(
-                a.getClass().getComponentType(), size);
-        int i = 0;
-        Object[] result = a;
+        final ReentrantLock lock = this.lock;
 
-        for (Node<E> x = this.first; x != null; x = x.next) {
-            result[i++] = x.element;
+        try {
+            lock.lock();
+            a = (T[]) Array.newInstance(
+                    a.getClass().getComponentType(), size.get());
+            int i = 0;
+            Object[] result = a;
+
+            for (Node<E> x = this.first; x != null; x = x.next) {
+                result[i++] = x.element;
+            }
+
+            return a;
+        } finally {
+            lock.unlock();
         }
-
-        return a;
     }
 
     /**
@@ -168,7 +211,14 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public boolean add(E e) {
-        linkLast(e);
+        final ReentrantLock lock = this.lock;
+
+        try {
+            lock.lock();
+            linkLast(e);
+        } finally {
+            lock.unlock();
+        }
 
         return true;
     }
@@ -182,7 +232,7 @@ public class CustomLinkedList<E> implements List<E> {
             first = newNode;
         else
             l.next = newNode;
-        size++;
+        size.incrementAndGet();
     }
 
     /**
@@ -193,23 +243,30 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public boolean remove(Object o) {
-        if (o == null) {
-            for (Node<E> x = first; x != null; x = x.next) {
-                if (x.element == null) {
-                    unlink(x);
-                    return true;
-                }
-            }
-        } else {
-            for (Node<E> x = first; x != null; x = x.next) {
-                if (o.equals(x.element)) {
-                    unlink(x);
-                    return true;
-                }
-            }
-        }
+        final ReentrantLock lock = this.lock;
 
-        return false;
+        try {
+            lock.lock();
+            if (o == null) {
+                for (Node<E> x = first; x != null; x = x.next) {
+                    if (x.element == null) {
+                        unlink(x);
+                        return true;
+                    }
+                }
+            } else {
+                for (Node<E> x = first; x != null; x = x.next) {
+                    if (o.equals(x.element)) {
+                        unlink(x);
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -238,7 +295,7 @@ public class CustomLinkedList<E> implements List<E> {
         }
 
         x.element = null;
-        size--;
+        size.decrementAndGet();
 
         return element;
     }
@@ -257,7 +314,7 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public boolean addAll(Collection<? extends E> c) {
-        return addAll(size, c);
+        return addAll(size.get(), c);
     }
 
     /**
@@ -272,41 +329,48 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public boolean addAll(int index, Collection<? extends E> c) {
-        checkPositionIndex(index);
+        final ReentrantLock lock = this.lock;
 
-        Object[] a = c.toArray();
-        int numNew = a.length;
-        if (numNew == 0)
-            return false;
+        try {
+            lock.lock();
+            checkPositionIndex(index);
 
-        Node<E> pred, succ;
-        if (index == size) {
-            succ = null;
-            pred = last;
-        } else {
-            succ = node(index);
-            pred = succ.previous;
+            Object[] a = c.toArray();
+            int numNew = a.length;
+            if (numNew == 0)
+                return false;
+
+            Node<E> pred, succ;
+            if (index == size.get()) {
+                succ = null;
+                pred = last;
+            } else {
+                succ = node(index);
+                pred = succ.previous;
+            }
+
+            for (Object o : a) {
+                @SuppressWarnings("unchecked") E e = (E) o;
+                Node<E> newNode = new Node<>(pred, e, null);
+                if (pred == null)
+                    first = newNode;
+                else
+                    pred.next = newNode;
+                pred = newNode;
+            }
+
+            if (succ == null) {
+                last = pred;
+            } else {
+                pred.next = succ;
+                succ.previous = pred;
+            }
+
+            size.addAndGet(numNew);
+            return true;
+        } finally {
+            lock.unlock();
         }
-
-        for (Object o : a) {
-            @SuppressWarnings("unchecked") E e = (E) o;
-            Node<E> newNode = new Node<>(pred, e, null);
-            if (pred == null)
-                first = newNode;
-            else
-                pred.next = newNode;
-            pred = newNode;
-        }
-
-        if (succ == null) {
-            last = pred;
-        } else {
-            pred.next = succ;
-            succ.previous = pred;
-        }
-
-        size += numNew;
-        return true;
     }
 
     /**
@@ -315,23 +379,30 @@ public class CustomLinkedList<E> implements List<E> {
      * @return the Node at the specified element index
      */
     private Node<E> node(int index) {
-        Node<E> x;
+        final ReentrantLock lock = this.lock;
 
-        if (index < (size >> 1)) {
-            x = first;
-            for (int i = 0; i < index; i++)
-                x = x.next;
-        } else {
-            x = last;
-            for (int i = size - 1; i > index; i--)
-                x = x.previous;
+        try {
+            lock.lock();
+            Node<E> x;
+
+            if (index < (size.get() >> 1)) {
+                x = first;
+                for (int i = 0; i < index; i++)
+                    x = x.next;
+            } else {
+                x = last;
+                for (int i = size.get() - 1; i > index; i--)
+                    x = x.previous;
+            }
+
+            return x;
+        } finally {
+            lock.unlock();
         }
-
-        return x;
     }
 
     private void checkPositionIndex(int index) {
-        if (index < 0 || index > size) {
+        if (index < 0 || index > size.get()) {
             throw new IndexOutOfBoundsException(getMessageForIndexOutOfBoundException(index));
         }
     }
@@ -359,16 +430,23 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public void clear() {
-        Node<E> next;
-        for (Node<E> x = first; x != null; x = next) {
-            next = x.next;
-            x.element = null;
-            x.next = null;
-            x.previous = null;
-        }
+        final ReentrantLock lock = this.lock;
 
-        this.first = this.last = null;
-        this.size = 0;
+        try {
+            lock.lock();
+            Node<E> next;
+            for (Node<E> x = first; x != null; x = next) {
+                next = x.next;
+                x.element = null;
+                x.next = null;
+                x.previous = null;
+            }
+
+            first = this.last = null;
+            size.set(0);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -379,13 +457,20 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public E get(int index) {
-        checkElementIndex(index);
+        final ReentrantLock lock = this.lock;
 
-        return node(index).element;
+        try {
+            lock.lock();
+            checkElementIndex(index);
+
+            return node(index).element;
+        } finally {
+            lock.unlock();
+        }
     }
 
     private void checkElementIndex(int index) {
-        if (index < 0 || index >= size) {
+        if (index < 0 || index >= size.get()) {
             throw new IndexOutOfBoundsException(
                     getMessageForIndexOutOfBoundException(index));
         }
@@ -400,13 +485,20 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public E set(int index, E element) {
-        checkElementIndex(index);
+        final ReentrantLock lock = this.lock;
 
-        Node<E> x = node(index);
-        E oldVal = x.element;
-        x.element = element;
+        try {
+            lock.lock();
+            checkElementIndex(index);
 
-        return oldVal;
+            Node<E> x = node(index);
+            E oldVal = x.element;
+            x.element = element;
+
+            return oldVal;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -418,12 +510,19 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public void add(int index, E element) {
-        checkPositionIndex(index);
+        final ReentrantLock lock = this.lock;
 
-        if (index == size) {
-            linkLast(element);
-        } else {
-            linkBefore(element, node(index));
+        try {
+            lock.lock();
+            checkPositionIndex(index);
+
+            if (index == size.get()) {
+                linkLast(element);
+            } else {
+                linkBefore(element, node(index));
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -443,7 +542,7 @@ public class CustomLinkedList<E> implements List<E> {
         else
             pred.next = newNode;
 
-        size++;
+        size.incrementAndGet();
     }
 
     /**
@@ -454,9 +553,16 @@ public class CustomLinkedList<E> implements List<E> {
      */
     @Override
     public E remove(int index) {
-        checkElementIndex(index);
+        final ReentrantLock lock = this.lock;
 
-        return unlink(node(index));
+        try {
+            lock.lock();
+            checkElementIndex(index);
+
+            return unlink(node(index));
+        } finally {
+            lock.unlock();
+        }
     }
 
     @Override

@@ -1,12 +1,12 @@
 package ru.clevertec.collections.data;
 
-import ru.clevertec.collections.CustomArrayList;
-import ru.clevertec.collections.CustomLinkedList;
+import ru.clevertec.collections.ClevertecArrayList;
+import ru.clevertec.collections.ClevertecLinkedList;
 
 public class Data {
 
-    public static CustomArrayList<String> getDataForCustomArrayList() {
-        CustomArrayList<String> data = new CustomArrayList<>();
+    public static ClevertecArrayList<String> getDataForCustomArrayList() {
+        ClevertecArrayList<String> data = new ClevertecArrayList<>();
 
         for (int i = 0; i < 100; i++) {
             data.add("elem" + i);
@@ -15,8 +15,8 @@ public class Data {
         return data;
     }
 
-    public static CustomLinkedList<String> getDataForCustomLinkedList() {
-        CustomLinkedList<String> data = new CustomLinkedList<>();
+    public static ClevertecLinkedList<String> getDataForCustomLinkedList() {
+        ClevertecLinkedList<String> data = new ClevertecLinkedList<>();
 
         for (int i = 0; i < 100; i++) {
             data.add("elem" + i);
